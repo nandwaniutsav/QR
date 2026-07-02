@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Nandwani Handloom — QR</title>
+<style>
+  :root{
+    --red:#e11d2a; --charcoal:#1c1c1e; --ink:#2a2a2e; --muted:#8a8a90;
+    --line:#e7e7ea; --bg:#f5f5f4; --card:#ffffff; --ok:#0a7d3b;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--bg); color:var(--ink); -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:920px;margin:0 auto;padding:20px 16px 80px}
+
+  /* ---------- header ---------- */
+  header.top{display:flex;align-items:center;gap:14px;padding:18px 0 22px}
+  header.top img{height:46px;width:auto}
+  header.top .t{font-size:13px;color:var(--muted);letter-spacing:.06em;text-transform:uppercase}
+
+  /* ---------- admin form ---------- */
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 18px 20px;margin-bottom:22px}
+  .panel h2{margin:0 0 14px;font-size:15px;letter-spacing:.02em;text-transform:uppercase;color:var(--charcoal)}
+  .row{display:flex;gap:12px;flex-wrap:wrap}
+  .field{flex:1;min-width:160px;margin-bottom:12px}
+  label{display:block;font-size:12px;color:var(--muted);margin-bottom:6px;letter-spacing:.03em;text-transform:uppercase}
+  input{
+    width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:9px;
+    font-size:15px;background:#fafafa;color:var(--ink);outline:none;transition:.12s
+  }
+  input:focus{border-color:var(--red);background:#fff}
+  .ranges{margin-top:6px}
+  .rangehdr{display:flex;justify-content:space-between;align-items:center;margin:6px 0 8px}
+  .rangehdr span{font-size:12px;color:var(--muted);letter-spacing:.04em;text-transform:uppercase}
+  .rrow{display:grid;grid-template-columns:1.3fr 1.3fr .9fr .9fr 34px;gap:8px;margin-bottom:8px;align-items:center}
+  .rrow input{padding:9px 10px;font-size:14px}
+  .rmv{border:none;background:#f1f1f2;color:#b02;border-radius:8px;height:38px;cursor:pointer;font-size:18px;line-height:1}
+  .rmv:hover{background:#fbe3e5}
+  .btn{border:none;border-radius:9px;padding:11px 18px;font-size:14px;font-weight:600;cursor:pointer;letter-spacing:.02em}
+  .btn.primary{background:var(--red);color:#fff}
+  .btn.primary:hover{filter:brightness(1.05)}
+  .btn.ghost{background:#f1f1f2;color:var(--ink)}
+  .btn.ghost:hover{background:#e7e7ea}
+  .btn.tiny{padding:7px 12px;font-size:12.5px}
+  .addrange{background:none;border:1px dashed var(--line);color:var(--muted);border-radius:9px;padding:9px;width:100%;cursor:pointer;font-size:13px}
+  .addrange:hover{border-color:var(--red);color:var(--red)}
+  .formfoot{display:flex;gap:10px;margin-top:6px;align-items:center}
+  .msg{font-size:13px;color:var(--red)}
+  .msg.ok{color:var(--ok)}
+
+  /* ---------- file list ---------- */
+  .brandgroup{margin-bottom:26px}
+  .brandname{font-size:13px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--red);margin:0 0 10px 2px}
+  .fcard{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:10px}
+  .fcard .fn{font-size:16px;font-weight:600}
+  .fcard .fmeta{font-size:12.5px;color:var(--muted);margin-top:3px}
+  .fcard .acts{display:flex;gap:8px;flex-shrink:0}
+  .empty{color:var(--muted);font-size:14px;text-align:center;padding:30px}
+
+  /* ---------- QR modal ---------- */
+  .overlay{position:fixed;inset:0;background:rgba(20,20,22,.55);display:none;align-items:center;justify-content:center;padding:16px;z-index:50}
+  .overlay.on{display:flex}
+  .modal{background:#fff;border-radius:16px;max-width:520px;width:100%;padding:20px;text-align:center;max-height:92vh;overflow:auto}
+  .modal h3{margin:0 0 4px;font-size:17px}
+  .modal .sub{font-size:13px;color:var(--muted);margin-bottom:16px}
+  .cardprev{border:1px solid var(--line);border-radius:12px;overflow:hidden;margin:0 auto 16px;background:#fff;max-width:420px}
+  .cardprev img{width:100%;display:block}
+  .modal .mfoot{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+  .hint{font-size:12px;color:var(--muted);margin-top:14px;line-height:1.5}
+  .close{position:absolute;top:14px;right:16px;font-size:24px;color:#999;cursor:pointer;background:none;border:none}
+
+  /* ---------- viewer ---------- */
+  .viewer{max-width:560px;margin:0 auto;padding:26px 18px 60px}
+  .vlogo{text-align:center;margin-bottom:22px}
+  .vlogo img{height:56px;width:auto}
+  .vhead{text-align:center;margin-bottom:22px}
+  .vbrand{font-size:12.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--red)}
+  .vfile{font-size:26px;font-weight:700;margin-top:4px;color:var(--charcoal)}
+  table.rates{width:100%;border-collapse:collapse;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+  table.rates th{background:var(--charcoal);color:#fff;font-size:11px;letter-spacing:.06em;text-transform:uppercase;padding:12px 12px;text-align:left;font-weight:600}
+  table.rates td{padding:13px 12px;border-top:1px solid var(--line);font-size:15px}
+  table.rates td.rate{font-weight:700;color:var(--charcoal);white-space:nowrap}
+  table.rates tr:nth-child(even) td{background:#fafafa}
+  .vfoot{text-align:center;font-size:12px;color:var(--muted);margin-top:26px}
+  .notfound{text-align:center;padding:60px 20px;color:var(--muted)}
+  .notfound b{color:var(--charcoal);display:block;font-size:18px;margin-bottom:6px}
+
+  @media (max-width:560px){
+    .rrow{grid-template-columns:1fr 1fr;grid-auto-rows:auto}
+    .rrow .rmv{grid-column:1 / -1;width:auto}
+    .fcard{flex-direction:column;align-items:flex-start}
+    .fcard .acts{width:100%}
+    .fcard .acts .btn{flex:1}
+  }
+</style>
+</head>
+<body>
+  <div id="app"></div>
+
+  <!-- Firebase compat + QR lib -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+
+<script>
+/* ============ Firebase ============ */
+const firebaseConfig = {
+  apiKey: "AIzaSyCBNt8uYNX6EUzEtNSCW37WMSdu5WMk-JM",
+  authDomain: "nandwani-qr.firebaseapp.com",
+  projectId: "nandwani-qr",
+  storageBucket: "nandwani-qr.firebasestorage.app",
+  messagingSenderId: "90601445027",
+  appId: "1:90601445027:web:dbeb6f0dccbffbe8f0d116"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+const COL = db.collection("files");
+const LOGO = "nandwani_handloom.png";
+const app = document.getElementById("app");
+
+/* ============ Router ============ */
+function fileIdFromHash(){
+  const m = (location.hash||"").match(/f=([^&]+)/);
+  return m ? decodeURIComponent(m[1]) : null;
+}
+function route(){
+  const id = fileIdFromHash();
+  if(id){ renderViewer(id); } else { renderAdmin(); }
+}
+window.addEventListener("hashchange", route);
+
+/* ============ VIEWER (what a scan opens) ============ */
+async function renderViewer(id){
+  app.innerHTML = `<div class="viewer"><div class="notfound">Loading…</div></div>`;
+  let doc;
+  try{ doc = await COL.doc(id).get(); }
+  catch(e){ return viewerError("Couldn’t load. Check your connection and try again."); }
+  if(!doc.exists) return viewerError("This code isn’t linked to a file anymore.");
+  const f = doc.data();
+  const rows = (f.ranges||[]).map(r=>`
+    <tr>
+      <td>${esc(r.name)}</td>
+      <td>${esc(r.quality)}</td>
+      <td>${esc(r.width)}</td>
+      <td class="rate">${fmtRate(r.rate)}</td>
+    </tr>`).join("");
+  app.innerHTML = `
+    <div class="viewer">
+      <div class="vlogo"><img src="${LOGO}" alt="Nandwani Handloom" onerror="this.style.display='none'"></div>
+      <div class="vhead">
+        <div class="vbrand">${esc(f.brand||"")}</div>
+        <div class="vfile">${esc(f.fileName||"")}</div>
+      </div>
+      <table class="rates">
+        <thead><tr><th>Name</th><th>Quality</th><th>Width</th><th>Rate</th></tr></thead>
+        <tbody>${rows||`<tr><td colspan="4" style="text-align:center;color:var(--muted)">No ranges added.</td></tr>`}</tbody>
+      </table>
+      <div class="vfoot">Nandwani Handloom · Exclusive Showroom of Furnishing Item</div>
+    </div>`;
+  document.title = `${f.brand||""} ${f.fileName||""} — Nandwani Handloom`.trim();
+}
+function viewerError(t){
+  app.innerHTML = `<div class="viewer"><div class="vlogo"><img src="${LOGO}" onerror="this.style.display='none'"></div>
+    <div class="notfound"><b>${esc(t)}</b>Ask staff for the current rate list.</div></div>`;
+}
+
+/* ============ ADMIN ============ */
+let FILES = [];       // cached live list
+let editingId = null; // null = new
+
+function renderAdmin(){
+  document.title = "Nandwani Handloom — QR Admin";
+  app.innerHTML = `
+    <div class="wrap">
+      <header class="top">
+        <img src="${LOGO}" alt="logo" onerror="this.style.display='none'">
+        <div class="t">QR Rate Cards · Admin</div>
+      </header>
+
+      <div class="panel">
+        <h2 id="formTitle">Add File</h2>
+        <div class="row">
+          <div class="field"><label>Brand</label>
+            <input id="in-brand" list="brands" placeholder="e.g. D'Decor" autocomplete="off">
+            <datalist id="brands"></datalist>
+          </div>
+          <div class="field"><label>File Name</label>
+            <input id="in-file" placeholder="e.g. Emborio" autocomplete="off">
+          </div>
+        </div>
+
+        <div class="ranges">
+          <div class="rangehdr"><span>Ranges</span></div>
+          <div id="rangeList"></div>
+          <button class="addrange" id="addRange">+ Add range</button>
+        </div>
+
+        <div class="formfoot" style="margin-top:14px">
+          <button class="btn primary" id="saveBtn">Save File</button>
+          <button class="btn ghost" id="cancelBtn" style="display:none">Cancel</button>
+          <span class="msg" id="formMsg"></span>
+        </div>
+      </div>
+
+      <div id="list"></div>
+    </div>
+
+    <div class="overlay" id="overlay">
+      <div class="modal" style="position:relative">
+        <button class="close" id="mClose">&times;</button>
+        <h3 id="mTitle"></h3>
+        <div class="sub" id="mSub"></div>
+        <div class="cardprev"><img id="mImg" alt="card"></div>
+        <div class="mfoot">
+          <button class="btn primary" id="mDownload">Download A6 PNG</button>
+          <button class="btn ghost" id="mPrint">Print</button>
+          <button class="btn ghost" id="mCopy">Copy link</button>
+        </div>
+        <div class="hint">This QR is permanent. Edit rates anytime, hit Save, and the scanned page updates automatically — no reprinting.</div>
+      </div>
+    </div>`;
+
+  wireForm();
+  addRangeRow();        // start with one range
+  subscribeFiles();
+  wireModal();
+}
+
+/* ---- form wiring ---- */
+function wireForm(){
+  document.getElementById("addRange").onclick = ()=>addRangeRow();
+  document.getElementById("saveBtn").onclick = saveFile;
+  document.getElementById("cancelBtn").onclick = resetForm;
+}
+function addRangeRow(data){
+  const list = document.getElementById("rangeList");
+  const div = document.createElement("div");
+  div.className = "rrow";
+  div.innerHTML = `
+    <input placeholder="Name"    class="r-name"    value="${data?esc(data.name):""}">
+    <input placeholder="Quality" class="r-quality" value="${data?esc(data.quality):""}">
+    <input placeholder="Width"   class="r-width"   value="${data?esc(data.width):""}">
+    <input placeholder="Rate ₹"  class="r-rate"    value="${data?esc(data.rate):""}" inputmode="decimal">
+    <button class="rmv" title="Remove">×</button>`;
+  div.querySelector(".rmv").onclick = ()=>{
+    const rows = list.querySelectorAll(".rrow");
+    if(rows.length>1) div.remove();
+    else flash("Keep at least one range.");
+  };
+  list.appendChild(div);
+}
+function readForm(){
+  const brand = document.getElementById("in-brand").value.trim();
+  const fileName = document.getElementById("in-file").value.trim();
+  const ranges = [...document.querySelectorAll("#rangeList .rrow")].map(r=>({
+    name:    r.querySelector(".r-name").value.trim(),
+    quality: r.querySelector(".r-quality").value.trim(),
+    width:   r.querySelector(".r-width").value.trim(),
+    rate:    r.querySelector(".r-rate").value.trim()
+  })).filter(r=>r.name||r.quality||r.width||r.rate);
+  return {brand,fileName,ranges};
+}
+async function saveFile(){
+  const {brand,fileName,ranges} = readForm();
+  if(!brand)    return flash("Brand is required.");
+  if(!fileName) return flash("File name is required.");
+  if(ranges.length===0) return flash("Add at least one range.");
+  const bad = ranges.find(r=>!r.name || !r.rate);
+  if(bad) return flash("Each range needs at least a name and a rate.");
+
+  const payload = {brand,fileName,ranges,updatedAt:firebase.firestore.FieldValue.serverTimestamp()};
+  try{
+    if(editingId){
+      await COL.doc(editingId).update(payload);
+      flash("Saved. Scanned page is now updated.",true);
+    }else{
+      payload.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+      await COL.add(payload);
+      flash("File added.",true);
+    }
+    resetForm();
+  }catch(e){ flash("Save failed: "+e.message); }
+}
+function editFile(id){
+  const f = FILES.find(x=>x.id===id); if(!f) return;
+  editingId = id;
+  document.getElementById("formTitle").textContent = "Edit File";
+  document.getElementById("in-brand").value = f.brand||"";
+  document.getElementById("in-file").value = f.fileName||"";
+  document.getElementById("rangeList").innerHTML = "";
+  (f.ranges&&f.ranges.length?f.ranges:[{}]).forEach(r=>addRangeRow(r));
+  document.getElementById("cancelBtn").style.display = "inline-block";
+  document.getElementById("saveBtn").textContent = "Update File";
+  window.scrollTo({top:0,behavior:"smooth"});
+}
+function resetForm(){
+  editingId = null;
+  document.getElementById("formTitle").textContent = "Add File";
+  document.getElementById("in-brand").value = "";
+  document.getElementById("in-file").value = "";
+  document.getElementById("rangeList").innerHTML = "";
+  addRangeRow();
+  document.getElementById("cancelBtn").style.display = "none";
+  document.getElementById("saveBtn").textContent = "Save File";
+}
+async function deleteFile(id){
+  const f = FILES.find(x=>x.id===id);
+  if(!confirm(`Delete "${f?.brand||""} ${f?.fileName||""}"?\nAny printed QR for it will stop working.`)) return;
+  try{ await COL.doc(id).delete(); }catch(e){ alert("Delete failed: "+e.message); }
+}
+function flash(t,ok){
+  const m=document.getElementById("formMsg");
+  m.textContent=t; m.className="msg"+(ok?" ok":"");
+  if(ok) setTimeout(()=>{if(m.textContent===t)m.textContent="";},2500);
+}
+
+/* ---- live list ---- */
+function subscribeFiles(){
+  COL.orderBy("brand").onSnapshot(snap=>{
+    FILES = snap.docs.map(d=>({id:d.id,...d.data()}));
+    renderList();
+    renderBrandDatalist();
+  }, err=>{
+    document.getElementById("list").innerHTML =
+      `<div class="empty">Couldn’t load files: ${esc(err.message)}</div>`;
+  });
+}
+function renderBrandDatalist(){
+  const brands=[...new Set(FILES.map(f=>f.brand).filter(Boolean))].sort();
+  document.getElementById("brands").innerHTML = brands.map(b=>`<option value="${esc(b)}">`).join("");
+}
+function renderList(){
+  const el=document.getElementById("list");
+  if(FILES.length===0){ el.innerHTML=`<div class="empty">No files yet. Add your first above.</div>`; return; }
+  const byBrand={};
+  FILES.forEach(f=>{ (byBrand[f.brand||"—"] ||= []).push(f); });
+  el.innerHTML = Object.keys(byBrand).sort().map(brand=>{
+    const items = byBrand[brand]
+      .sort((a,b)=>(a.fileName||"").localeCompare(b.fileName||""))
+      .map(f=>`
+        <div class="fcard">
+          <div>
+            <div class="fn">${esc(f.fileName)}</div>
+            <div class="fmeta">${(f.ranges||[]).length} range${(f.ranges||[]).length===1?"":"s"}</div>
+          </div>
+          <div class="acts">
+            <button class="btn primary tiny" onclick="openQR('${f.id}')">QR / Print</button>
+            <button class="btn ghost tiny" onclick="editFile('${f.id}')">Edit</button>
+            <button class="btn ghost tiny" onclick="deleteFile('${f.id}')">Delete</button>
+          </div>
+        </div>`).join("");
+    return `<div class="brandgroup"><div class="brandname">${esc(brand)}</div>${items}</div>`;
+  }).join("");
+}
+
+/* ============ QR CARD (A6 landscape) ============ */
+function viewerURL(id){ return location.origin + location.pathname + "#f=" + encodeURIComponent(id); }
+
+// A6 landscape @ 300 DPI = 1748 x 1240 px
+function buildCardCanvas(file){
+  return new Promise(async (resolve)=>{
+    const W=1748,H=1240;
+    const cv=document.createElement("canvas"); cv.width=W; cv.height=H;
+    const c=cv.getContext("2d");
+    c.fillStyle="#fff"; c.fillRect(0,0,W,H);
+    // border
+    c.strokeStyle="#e11d2a"; c.lineWidth=6; c.strokeRect(24,24,W-48,H-48);
+
+    // QR canvas
+    const qc=document.createElement("canvas");
+    await QRCode.toCanvas(qc, viewerURL(file.id), {width:640,margin:1,
+      color:{dark:"#1c1c1e",light:"#ffffff"}, errorCorrectionLevel:"M"});
+
+    // logo (optional)
+    const logo = await loadImg(LOGO).catch(()=>null);
+    let y=120;
+    if(logo){
+      const lw=1000, lh=lw*(logo.naturalHeight/logo.naturalWidth);
+      c.drawImage(logo,(W-lw)/2,y,lw,lh);
+      y += lh + 40;
+    }else{ y=180; }
+
+    // brand (small)
+    c.textAlign="center"; c.fillStyle="#e11d2a";
+    c.font="700 34px Arial";
+    c.fillText((file.brand||"").toUpperCase(), W/2, y); y+=64;
+
+    // file name (big)
+    c.fillStyle="#1c1c1e"; c.font="700 86px Arial";
+    c.fillText(file.fileName||"", W/2, y); y+=40;
+
+    // QR centered in remaining space
+    const qy = Math.max(y+10, H-640-90);
+    c.drawImage(qc,(W-640)/2,qy,640,640);
+
+    // caption under QR
+    c.fillStyle="#8a8a90"; c.font="500 28px Arial";
+    c.fillText("Scan for current rates", W/2, qy+640+46);
+
+    resolve(cv);
+  });
+}
+function loadImg(src){
+  return new Promise((res,rej)=>{ const i=new Image(); i.onload=()=>res(i); i.onerror=rej; i.src=src; });
+}
+
+/* ---- modal ---- */
+let modalFile=null, modalDataURL=null;
+function wireModal(){
+  document.getElementById("mClose").onclick = closeQR;
+  document.getElementById("overlay").onclick = e=>{ if(e.target.id==="overlay") closeQR(); };
+  document.getElementById("mDownload").onclick = ()=>{
+    if(!modalDataURL) return;
+    const a=document.createElement("a");
+    a.href=modalDataURL;
+    a.download=`${(modalFile.brand||"").replace(/\s+/g,"_")}_${(modalFile.fileName||"").replace(/\s+/g,"_")}_A6.png`;
+    a.click();
+  };
+  document.getElementById("mPrint").onclick = printCard;
+  document.getElementById("mCopy").onclick = async ()=>{
+    try{ await navigator.clipboard.writeText(viewerURL(modalFile.id)); flashModal("Link copied"); }
+    catch{ prompt("Copy link:", viewerURL(modalFile.id)); }
+  };
+}
+async function openQR(id){
+  modalFile = FILES.find(f=>f.id===id); if(!modalFile) return;
+  document.getElementById("mTitle").textContent = modalFile.fileName||"";
+  document.getElementById("mSub").textContent = modalFile.brand||"";
+  document.getElementById("mImg").src = "";
+  document.getElementById("overlay").classList.add("on");
+  const cv = await buildCardCanvas(modalFile);
+  modalDataURL = cv.toDataURL("image/png");
+  document.getElementById("mImg").src = modalDataURL;
+}
+function closeQR(){ document.getElementById("overlay").classList.remove("on"); }
+function flashModal(t){ const s=document.getElementById("mSub"); const o=s.textContent; s.textContent=t; setTimeout(()=>s.textContent=o,1500); }
+function printCard(){
+  if(!modalDataURL) return;
+  const w=window.open("","_blank");
+  w.document.write(`<html><head><title>Print</title><style>
+    @page{size:A6 landscape;margin:0}
+    html,body{margin:0;padding:0}
+    img{width:148mm;height:105mm;object-fit:contain;display:block}
+  </style></head><body><img src="${modalDataURL}" onload="setTimeout(()=>{print();},150)"></body></html>`);
+  w.document.close();
+}
+
+/* ============ utils ============ */
+function esc(s){ return String(s??"").replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+function fmtRate(r){
+  if(r===undefined||r===null||r==="") return "";
+  const s=String(r).trim();
+  return /^[\d.,]+$/.test(s) ? "₹"+s : s;
+}
+
+/* ============ go ============ */
+route();
+</script>
+</body>
+</html>
