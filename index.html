@@ -61,6 +61,17 @@
   .fcard .acts{display:flex;gap:8px;flex-shrink:0}
   .empty{color:var(--muted);font-size:14px;text-align:center;padding:30px}
 
+  /* ---------- select bar ---------- */
+  .selbar{
+    position:fixed;left:0;right:0;bottom:0;background:var(--charcoal);color:#fff;
+    padding:14px 18px;display:flex;align-items:center;justify-content:center;gap:14px;
+    box-shadow:0 -4px 16px rgba(0,0,0,.18);z-index:40;flex-wrap:wrap
+  }
+  .selbar .cnt{font-size:14px}
+  .selbar .btn.primary{background:var(--red)}
+  .selbar .btn.ghost{background:#3a3a3d;color:#fff}
+  .selbar .btn.ghost:hover{background:#48484c}
+
   /* ---------- QR modal ---------- */
   .overlay{position:fixed;inset:0;background:rgba(20,20,22,.55);display:none;align-items:center;justify-content:center;padding:16px;z-index:50}
   .overlay.on{display:flex}
@@ -93,6 +104,7 @@
     .rrow{grid-template-columns:1fr 1fr;grid-auto-rows:auto}
     .rrow .rmv{grid-column:1 / -1;width:auto}
     .fcard{flex-direction:column;align-items:flex-start}
+    .fcard > label{width:100%}
     .fcard .acts{width:100%}
     .fcard .acts .btn{flex:1}
   }
@@ -184,17 +196,18 @@ function renderAdmin(){
       <div class="panel">
         <h2 id="formTitle">Add File</h2>
         <div class="row">
-          <div class="field"><label>Brand</label>
+          <div class="field"><label>Brand *</label>
             <input id="in-brand" list="brands" placeholder="e.g. D'Decor" autocomplete="off">
             <datalist id="brands"></datalist>
           </div>
-          <div class="field"><label>File Name</label>
-            <input id="in-file" placeholder="e.g. Emborio" autocomplete="off">
+          <div class="field"><label>File Name *</label>
+            <input id="in-file" list="fileNames" placeholder="e.g. Emborio" autocomplete="off">
+            <datalist id="fileNames"></datalist>
           </div>
         </div>
 
         <div class="ranges">
-          <div class="rangehdr"><span>Ranges</span></div>
+          <div class="rangehdr"><span>Ranges (Name &amp; Rate required, Quality &amp; Width optional)</span></div>
           <div id="rangeList"></div>
           <button class="addrange" id="addRange">+ Add range</button>
         </div>
@@ -209,11 +222,14 @@ function renderAdmin(){
       <div id="list"></div>
     </div>
 
+    <div id="selectBar"></div>
+
     <div class="overlay" id="overlay">
       <div class="modal" style="position:relative">
         <button class="close" id="mClose">&times;</button>
         <h3 id="mTitle"></h3>
         <div class="sub" id="mSub"></div>
+        <div id="mErr" style="display:none;background:#fdecec;color:#b02;border-radius:8px;padding:10px 12px;font-size:13px;margin-bottom:12px;text-align:left"></div>
         <div class="cardprev"><img id="mImg" alt="card"></div>
         <div class="mfoot">
           <button class="btn primary" id="mDownload">Download A6 PNG</button>
@@ -228,6 +244,7 @@ function renderAdmin(){
   addRangeRow();        // start with one range
   subscribeFiles();
   wireModal();
+  renderSelectBar();
 }
 
 /* ---- form wiring ---- */
@@ -235,16 +252,24 @@ function wireForm(){
   document.getElementById("addRange").onclick = ()=>addRangeRow();
   document.getElementById("saveBtn").onclick = saveFile;
   document.getElementById("cancelBtn").onclick = resetForm;
+  document.getElementById("in-brand").addEventListener("input", renderFileNameDatalist);
+}
+function renderFileNameDatalist(){
+  const brand = document.getElementById("in-brand").value.trim().toLowerCase();
+  const names = [...new Set(
+    FILES.filter(f=>!brand || (f.brand||"").toLowerCase()===brand).map(f=>f.fileName).filter(Boolean)
+  )].sort();
+  document.getElementById("fileNames").innerHTML = names.map(n=>`<option value="${esc(n)}">`).join("");
 }
 function addRangeRow(data){
   const list = document.getElementById("rangeList");
   const div = document.createElement("div");
   div.className = "rrow";
   div.innerHTML = `
-    <input placeholder="Name"    class="r-name"    value="${data?esc(data.name):""}">
-    <input placeholder="Quality" class="r-quality" value="${data?esc(data.quality):""}">
-    <input placeholder="Width"   class="r-width"   value="${data?esc(data.width):""}">
-    <input placeholder="Rate ₹"  class="r-rate"    value="${data?esc(data.rate):""}" inputmode="decimal">
+    <input placeholder="Name *"    class="r-name"    value="${data?esc(data.name):""}">
+    <input placeholder="Quality"   class="r-quality" value="${data?esc(data.quality):""}">
+    <input placeholder="Width"     class="r-width"   value="${data?esc(data.width):""}">
+    <input placeholder="Rate ₹ *"  class="r-rate"    value="${data?esc(data.rate):""}" inputmode="decimal">
     <button class="rmv" title="Remove">×</button>`;
   div.querySelector(".rmv").onclick = ()=>{
     const rows = list.querySelectorAll(".rrow");
@@ -322,8 +347,11 @@ function flash(t,ok){
 function subscribeFiles(){
   COL.orderBy("brand").onSnapshot(snap=>{
     FILES = snap.docs.map(d=>({id:d.id,...d.data()}));
+    SELECTED = new Set([...SELECTED].filter(id=>FILES.some(f=>f.id===id))); // drop stale selections
     renderList();
     renderBrandDatalist();
+    renderFileNameDatalist();
+    renderSelectBar();
   }, err=>{
     document.getElementById("list").innerHTML =
       `<div class="empty">Couldn’t load files: ${esc(err.message)}</div>`;
@@ -343,10 +371,13 @@ function renderList(){
       .sort((a,b)=>(a.fileName||"").localeCompare(b.fileName||""))
       .map(f=>`
         <div class="fcard">
-          <div>
-            <div class="fn">${esc(f.fileName)}</div>
-            <div class="fmeta">${(f.ranges||[]).length} range${(f.ranges||[]).length===1?"":"s"}</div>
-          </div>
+          <label style="display:flex;align-items:center;gap:12px;cursor:pointer;flex:1;min-width:0">
+            <input type="checkbox" style="width:18px;height:18px;flex-shrink:0" ${SELECTED.has(f.id)?"checked":""} onchange="toggleSelect('${f.id}', this.checked)">
+            <div style="min-width:0">
+              <div class="fn">${esc(f.fileName)}</div>
+              <div class="fmeta">${(f.ranges||[]).length} range${(f.ranges||[]).length===1?"":"s"}</div>
+            </div>
+          </label>
           <div class="acts">
             <button class="btn primary tiny" onclick="openQR('${f.id}')">QR / Print</button>
             <button class="btn ghost tiny" onclick="editFile('${f.id}')">Edit</button>
@@ -357,55 +388,143 @@ function renderList(){
   }).join("");
 }
 
+/* ---- batch select + A4 print ---- */
+let SELECTED = new Set();
+function toggleSelect(id, on){
+  if(on) SELECTED.add(id); else SELECTED.delete(id);
+  renderSelectBar();
+}
+function clearSelection(){ SELECTED.clear(); renderList(); renderSelectBar(); }
+function renderSelectBar(){
+  const bar = document.getElementById("selectBar");
+  if(!bar) return;
+  if(SELECTED.size===0){ bar.innerHTML = ""; return; }
+  bar.innerHTML = `
+    <div class="selbar">
+      <span class="cnt">${SELECTED.size} file${SELECTED.size===1?"":"s"} selected</span>
+      <button class="btn primary" id="printSelBtn">Print Selected (A4)</button>
+      <button class="btn ghost" id="clearSelBtn">Clear</button>
+    </div>`;
+  document.getElementById("printSelBtn").onclick = printSelected;
+  document.getElementById("clearSelBtn").onclick = clearSelection;
+}
+async function printSelected(){
+  const ids = [...SELECTED];
+  if(ids.length===0) return;
+  const btn = document.getElementById("printSelBtn");
+  const orig = btn.textContent;
+  btn.textContent = "Preparing…"; btn.disabled = true;
+
+  const win = window.open("", "_blank");
+  win.document.write(`<!DOCTYPE html><html><head><title>Print — Nandwani QR Cards</title><style>
+    @page{size:A4 landscape;margin:8mm}
+    html,body{margin:0;padding:0;background:#fff}
+    .page{
+      display:grid;grid-template-columns:148mm 148mm;grid-template-rows:105mm 105mm;
+      justify-content:center;align-content:center;page-break-after:always
+    }
+    .page:last-child{page-break-after:auto}
+    .cell{width:148mm;height:105mm;box-sizing:border-box;display:flex;align-items:center;justify-content:center;border:1px dashed #ccc}
+    .cell img{width:100%;height:100%;object-fit:contain}
+    .note{font-family:sans-serif;text-align:center;padding:40px;color:#666}
+  </style></head><body><div class="note">Rendering ${ids.length} card${ids.length===1?"":"s"}…</div></body></html>`);
+  win.document.close();
+
+  const failed = [];
+  const urls = [];
+  for(const id of ids){
+    const f = FILES.find(x=>x.id===id);
+    if(!f){ continue; }
+    try{ const cv = await buildCardCanvas(f); urls.push(cv.toDataURL("image/png")); }
+    catch(e){ console.error("Card failed:", f.fileName, e); failed.push(f.fileName||id); }
+  }
+
+  win.document.body.innerHTML = "";
+  for(let i=0;i<urls.length;i+=4){
+    const page = win.document.createElement("div");
+    page.className = "page";
+    urls.slice(i,i+4).forEach(u=>{
+      const cell = win.document.createElement("div");
+      cell.className = "cell";
+      const img = win.document.createElement("img");
+      img.src = u;
+      cell.appendChild(img);
+      page.appendChild(cell);
+    });
+    win.document.body.appendChild(page);
+  }
+
+  btn.textContent = orig; btn.disabled = false;
+
+  if(urls.length===0){
+    win.document.body.innerHTML = `<div class="note">Nothing rendered — check the console in this tab for errors.</div>`;
+    return;
+  }
+  if(failed.length){
+    alert(`${failed.length} card(s) failed to render and were skipped: ${failed.join(", ")}`);
+  }
+  setTimeout(()=>win.print(), 400);
+}
+
 /* ============ QR CARD (A6 landscape) ============ */
 function viewerURL(id){ return location.origin + location.pathname + "#f=" + encodeURIComponent(id); }
 
 // A6 landscape @ 300 DPI = 1748 x 1240 px
-function buildCardCanvas(file){
-  return new Promise(async (resolve)=>{
-    const W=1748,H=1240;
-    const cv=document.createElement("canvas"); cv.width=W; cv.height=H;
-    const c=cv.getContext("2d");
-    c.fillStyle="#fff"; c.fillRect(0,0,W,H);
-    // border
-    c.strokeStyle="#e11d2a"; c.lineWidth=6; c.strokeRect(24,24,W-48,H-48);
+async function buildCardCanvas(file){
+  await ensureQRLib();
+  const W=1748,H=1240;
+  const cv=document.createElement("canvas"); cv.width=W; cv.height=H;
+  const c=cv.getContext("2d");
+  c.fillStyle="#fff"; c.fillRect(0,0,W,H);
+  // border
+  c.strokeStyle="#e11d2a"; c.lineWidth=6; c.strokeRect(24,24,W-48,H-48);
 
-    // QR canvas
-    const qc=document.createElement("canvas");
-    await QRCode.toCanvas(qc, viewerURL(file.id), {width:640,margin:1,
-      color:{dark:"#1c1c1e",light:"#ffffff"}, errorCorrectionLevel:"M"});
+  // QR canvas
+  const qc=document.createElement("canvas");
+  await QRCode.toCanvas(qc, viewerURL(file.id), {width:640,margin:1,
+    color:{dark:"#1c1c1e",light:"#ffffff"}, errorCorrectionLevel:"M"});
 
-    // logo (optional)
-    const logo = await loadImg(LOGO).catch(()=>null);
-    let y=120;
-    if(logo){
-      const lw=1000, lh=lw*(logo.naturalHeight/logo.naturalWidth);
-      c.drawImage(logo,(W-lw)/2,y,lw,lh);
-      y += lh + 40;
-    }else{ y=180; }
+  // logo (optional)
+  const logo = await loadImg(LOGO).catch(()=>null);
+  let y=120;
+  if(logo){
+    const lw=1000, lh=lw*(logo.naturalHeight/logo.naturalWidth);
+    c.drawImage(logo,(W-lw)/2,y,lw,lh);
+    y += lh + 40;
+  }else{ y=180; }
 
-    // brand (small)
-    c.textAlign="center"; c.fillStyle="#e11d2a";
-    c.font="700 34px Arial";
-    c.fillText((file.brand||"").toUpperCase(), W/2, y); y+=64;
+  // brand (small)
+  c.textAlign="center"; c.fillStyle="#e11d2a";
+  c.font="700 34px Arial";
+  c.fillText((file.brand||"").toUpperCase(), W/2, y); y+=64;
 
-    // file name (big)
-    c.fillStyle="#1c1c1e"; c.font="700 86px Arial";
-    c.fillText(file.fileName||"", W/2, y); y+=40;
+  // file name (big)
+  c.fillStyle="#1c1c1e"; c.font="700 86px Arial";
+  c.fillText(file.fileName||"", W/2, y); y+=40;
 
-    // QR centered in remaining space
-    const qy = Math.max(y+10, H-640-90);
-    c.drawImage(qc,(W-640)/2,qy,640,640);
+  // QR centered in remaining space
+  const qy = Math.max(y+10, H-640-90);
+  c.drawImage(qc,(W-640)/2,qy,640,640);
 
-    // caption under QR
-    c.fillStyle="#8a8a90"; c.font="500 28px Arial";
-    c.fillText("Scan for current rates", W/2, qy+640+46);
+  // caption under QR
+  c.fillStyle="#8a8a90"; c.font="500 28px Arial";
+  c.fillText("Scan for current rates", W/2, qy+640+46);
 
-    resolve(cv);
-  });
+  return cv;
 }
 function loadImg(src){
   return new Promise((res,rej)=>{ const i=new Image(); i.onload=()=>res(i); i.onerror=rej; i.src=src; });
+}
+// If the primary CDN is blocked/slow, fall back to unpkg once.
+function ensureQRLib(){
+  if(window.QRCode) return Promise.resolve();
+  return new Promise((res,rej)=>{
+    const s=document.createElement("script");
+    s.src="https://unpkg.com/qrcode@1.5.3/build/qrcode.min.js";
+    s.onload=()=>res();
+    s.onerror=()=>rej(new Error("QR library failed to load. Check your internet connection."));
+    document.head.appendChild(s);
+  });
 }
 
 /* ---- modal ---- */
@@ -431,10 +550,19 @@ async function openQR(id){
   document.getElementById("mTitle").textContent = modalFile.fileName||"";
   document.getElementById("mSub").textContent = modalFile.brand||"";
   document.getElementById("mImg").src = "";
+  document.getElementById("mErr").style.display = "none";
+  modalDataURL = null;
   document.getElementById("overlay").classList.add("on");
-  const cv = await buildCardCanvas(modalFile);
-  modalDataURL = cv.toDataURL("image/png");
-  document.getElementById("mImg").src = modalDataURL;
+  try{
+    const cv = await buildCardCanvas(modalFile);
+    modalDataURL = cv.toDataURL("image/png");
+    document.getElementById("mImg").src = modalDataURL;
+  }catch(e){
+    console.error("QR card render failed:", e);
+    const errEl = document.getElementById("mErr");
+    errEl.textContent = "Couldn't generate the card — " + e.message;
+    errEl.style.display = "block";
+  }
 }
 function closeQR(){ document.getElementById("overlay").classList.remove("on"); }
 function flashModal(t){ const s=document.getElementById("mSub"); const o=s.textContent; s.textContent=t; setTimeout(()=>s.textContent=o,1500); }
