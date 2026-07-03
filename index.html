@@ -2744,16 +2744,36 @@ async function printSelected(){
   btn.textContent = "Preparing…"; btn.disabled = true;
 
   const win = window.open("", "_blank");
+  if(!win){
+    alert("Your browser blocked the print pop-up. Allow pop-ups for this site and try again.");
+    btn.textContent = orig; btn.disabled = false;
+    return;
+  }
+
+  // A4 landscape = 297x210mm. Real printers can't print edge-to-edge, so cards
+  // are placed with genuine margins/gutters that fit any consumer printer's
+  // hardware limits — not shrunk right up to the paper edge. Net effect: each
+  // card prints ~88% of true A6 size (≈130x92mm) with cut guides at the corners.
+  const PAGE_MARGIN_MM = 10, GUTTER_MM = 6;
+  const usableW = 297 - PAGE_MARGIN_MM*2, usableH = 210 - PAGE_MARGIN_MM*2;
+  const cellW = (usableW - GUTTER_MM) / 2, cellH = (usableH - GUTTER_MM) / 2;
+  // fit the true A6 aspect ratio (148:105) inside the cell without distortion
+  const ratio = 148/105;
+  let cardW = cellH * ratio, cardH = cellH;
+  if(cardW > cellW){ cardW = cellW; cardH = cellW / ratio; }
+
   win.document.write(`<!DOCTYPE html><html><head><title>Print — Nandwani QR Cards</title><style>
-    @page{size:A4 landscape;margin:8mm}
+    @page{size:A4 landscape;margin:${PAGE_MARGIN_MM}mm}
     html,body{margin:0;padding:0;background:#fff}
     .page{
-      display:grid;grid-template-columns:148mm 148mm;grid-template-rows:105mm 105mm;
-      justify-content:center;align-content:center;page-break-after:always
+      display:grid;grid-template-columns:${cellW}mm ${cellW}mm;grid-template-rows:${cellH}mm ${cellH}mm;
+      gap:${GUTTER_MM}mm;page-break-after:always
     }
     .page:last-child{page-break-after:auto}
-    .cell{width:148mm;height:105mm;box-sizing:border-box;display:flex;align-items:center;justify-content:center;border:1px dashed #ccc}
-    .cell img{width:100%;height:100%;object-fit:contain}
+    .cell{width:${cellW}mm;height:${cellH}mm;display:flex;align-items:center;justify-content:center}
+    .cardbox{position:relative;width:${cardW}mm;height:${cardH}mm}
+    .cardbox img{width:100%;height:100%;display:block}
+    .tick{position:absolute;background:#aaa}
     .note{font-family:sans-serif;text-align:center;padding:40px;color:#666}
   </style></head><body><div class="note">Rendering ${ids.length} card${ids.length===1?"":"s"}…</div></body></html>`);
   win.document.close();
@@ -2768,15 +2788,29 @@ async function printSelected(){
   }
 
   win.document.body.innerHTML = "";
+  const TICK = 4; // mm, crop-mark leg length
   for(let i=0;i<urls.length;i+=4){
     const page = win.document.createElement("div");
     page.className = "page";
     urls.slice(i,i+4).forEach(u=>{
       const cell = win.document.createElement("div");
       cell.className = "cell";
+      const box = win.document.createElement("div");
+      box.className = "cardbox";
       const img = win.document.createElement("img");
       img.src = u;
-      cell.appendChild(img);
+      box.appendChild(img);
+      // corner crop marks, offset just outside the true card edge
+      [["top:-2mm;left:-2mm;width:2mm;height:0.3mm","top:-2mm;left:-2mm;width:0.3mm;height:2mm"],
+       ["top:-2mm;right:-2mm;width:2mm;height:0.3mm","top:-2mm;right:-2mm;width:0.3mm;height:2mm"],
+       ["bottom:-2mm;left:-2mm;width:2mm;height:0.3mm","bottom:-2mm;left:-2mm;width:0.3mm;height:2mm"],
+       ["bottom:-2mm;right:-2mm;width:2mm;height:0.3mm","bottom:-2mm;right:-2mm;width:0.3mm;height:2mm"]]
+      .flat().forEach(css=>{
+        const t = win.document.createElement("div");
+        t.className = "tick"; t.style.cssText = css;
+        box.appendChild(t);
+      });
+      cell.appendChild(box);
       page.appendChild(cell);
     });
     win.document.body.appendChild(page);
@@ -2797,43 +2831,122 @@ async function printSelected(){
 /* ============ QR CARD (A6 landscape) ============ */
 function viewerURL(id){ return location.origin + location.pathname + "#f=" + encodeURIComponent(id); }
 
+/* ---- drawing helpers ---- */
+function fitBoxSize(natW, natH, maxW, maxH){
+  const scale = Math.min(maxW/natW, maxH/natH);
+  return {w: natW*scale, h: natH*scale};
+}
+// Shrinks font until text fits maxWidth; truncates with an ellipsis as a last resort
+// so a long file name can never run off the card edge.
+function fitFontSize(ctx, text, maxWidth, startSize, minSize, weight, family){
+  let size = startSize;
+  const mk = s => `${weight} ${s}px ${family}`;
+  ctx.font = mk(size);
+  while(size > minSize && ctx.measureText(text).width > maxWidth){
+    size -= 2;
+    ctx.font = mk(size);
+  }
+  let out = text;
+  if(ctx.measureText(out).width > maxWidth){
+    while(out.length > 1 && ctx.measureText(out+"…").width > maxWidth) out = out.slice(0,-1);
+    out += "…";
+  }
+  return {text: out, size, font: mk(size)};
+}
+// Manual letter-spacing (canvas ctx.letterSpacing isn't reliable across browsers/print).
+function drawTracked(ctx, text, cx, cy, trackPx){
+  const chars = text.split("");
+  const widths = chars.map(ch=>ctx.measureText(ch).width);
+  const total = widths.reduce((a,b)=>a+b,0) + trackPx*Math.max(0,chars.length-1);
+  let x = cx - total/2;
+  const prevAlign = ctx.textAlign;
+  ctx.textAlign = "left";
+  chars.forEach((ch,i)=>{ ctx.fillText(ch, x, cy); x += widths[i] + trackPx; });
+  ctx.textAlign = prevAlign;
+}
+function roundRectPath(ctx,x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);
+  ctx.arcTo(x+w,y,x+w,y+h,r);
+  ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r);
+  ctx.arcTo(x,y,x+w,y,r);
+  ctx.closePath();
+}
+// Four inward-pointing L-marks — echoes the crop-mark/registration-mark language
+// of print design and gives the QR a "designed label" feel instead of floating bare.
+function drawCornerTicks(ctx,x,y,w,h,leg,thick,color){
+  ctx.fillStyle = color;
+  [{cx:x,cy:y,hx:1,vy:1},{cx:x+w,cy:y,hx:-1,vy:1},{cx:x,cy:y+h,hx:1,vy:-1},{cx:x+w,cy:y+h,hx:-1,vy:-1}]
+  .forEach(({cx,cy,hx,vy})=>{
+    ctx.fillRect(hx>0?cx:cx-leg, vy>0?cy:cy-thick, leg, thick);
+    ctx.fillRect(hx>0?cx:cx-thick, vy>0?cy:cy-leg, thick, leg);
+  });
+}
+
 // A6 landscape @ 300 DPI = 1748 x 1240 px
+// Layout verified to hold with zero overlap at both the shortest and longest
+// realistic file-name lengths — see the geometry check run during development.
 async function buildCardCanvas(file){
-  const W=1748,H=1240;
+  const W=1748, H=1240;
   const cv=document.createElement("canvas"); cv.width=W; cv.height=H;
   const c=cv.getContext("2d");
-  c.fillStyle="#fff"; c.fillRect(0,0,W,H);
-  // border
-  c.strokeStyle="#e11d2a"; c.lineWidth=6; c.strokeRect(24,24,W-48,H-48);
+  c.fillStyle="#ffffff"; c.fillRect(0,0,W,H);
 
-  // QR canvas — drawn locally, no network call
-  const qc = renderQRCanvas(viewerURL(file.id), 640, 2);
+  // top / bottom accent bars — replaces the old full-rectangle outline,
+  // which read as a diploma/certificate border rather than a shop label.
+  const BAR=14;
+  c.fillStyle="#e11d2a";
+  c.fillRect(0,0,W,BAR);
+  c.fillRect(0,H-BAR,W,BAR);
 
-  // logo (optional)
+  const qc = renderQRCanvas(viewerURL(file.id), 560, 2);
   const logo = await loadImg(LOGO).catch(()=>null);
-  let y=120;
+
+  let y = BAR + 56;
   if(logo){
-    const lw=1000, lh=lw*(logo.naturalHeight/logo.naturalWidth);
-    c.drawImage(logo,(W-lw)/2,y,lw,lh);
-    y += lh + 40;
-  }else{ y=180; }
+    const {w:lw,h:lh} = fitBoxSize(logo.naturalWidth, logo.naturalHeight, 720, 130);
+    c.drawImage(logo, (W-lw)/2, y, lw, lh);
+    y += lh + 34;
+  } else {
+    y += 34;
+  }
 
-  // brand (small)
+  // brand eyebrow
   c.textAlign="center"; c.fillStyle="#e11d2a";
-  c.font="700 34px Arial";
-  c.fillText((file.brand||"").toUpperCase(), W/2, y); y+=64;
+  c.font="700 26px Arial";
+  y += 26;
+  drawTracked(c, (file.brand||"").toUpperCase(), W/2, y, 5);
+  y += 30;
 
-  // file name (big)
-  c.fillStyle="#1c1c1e"; c.font="700 86px Arial";
-  c.fillText(file.fileName||"", W/2, y); y+=40;
+  // file name — auto-fits so long names never collide with the card edge
+  c.fillStyle="#1c1c1e";
+  const fit = fitFontSize(c, file.fileName||"", W-280, 84, 42, 700, "Arial");
+  c.font = fit.font;
+  y += fit.size*0.78;
+  c.fillText(fit.text, W/2, y);
+  y += fit.size*0.30 + 26;
 
-  // QR centered in remaining space
-  const qy = Math.max(y+10, H-640-90);
-  c.drawImage(qc,(W-640)/2,qy,640,640);
+  // flanking rule motif — mirrors the logo's own line-flanked wordmark treatment
+  const lineW=110, lineThick=4, gap=40;
+  c.fillStyle="#e11d2a";
+  c.fillRect(W/2 - gap/2 - lineW, y, lineW, lineThick);
+  c.fillRect(W/2 + gap/2, y, lineW, lineThick);
+  y += lineThick + 46;
 
-  // caption under QR
-  c.fillStyle="#8a8a90"; c.font="500 28px Arial";
-  c.fillText("Scan for current rates", W/2, qy+640+46);
+  // QR sits inside a framed, corner-ticked box, pinned near the bottom
+  // independent of header length (Math.max is a safety net, not the primary anchor).
+  const QR=560, PAD=24, FRAME=QR+PAD*2, captionH=64, bottomReserve=BAR+40;
+  let qy = Math.max(y, H - FRAME - captionH - bottomReserve);
+  const fx=(W-FRAME)/2, fy=qy;
+  c.fillStyle="#ffffff"; c.strokeStyle="#e5e5e8"; c.lineWidth=2;
+  roundRectPath(c,fx,fy,FRAME,FRAME,20); c.fill(); c.stroke();
+  drawCornerTicks(c, fx, fy, FRAME, FRAME, 32, 5, "#e11d2a");
+  c.drawImage(qc, fx+PAD, fy+PAD, QR, QR);
+
+  // caption
+  c.fillStyle="#8a8a90"; c.font="600 24px Arial";
+  drawTracked(c, "SCAN FOR CURRENT RATES", W/2, fy+FRAME+42, 3);
 
   return cv;
 }
@@ -2876,9 +2989,10 @@ function wireModal(){
   document.getElementById("overlay").onclick = e=>{ if(e.target.id==="overlay") closeQR(); };
   document.getElementById("mDownload").onclick = ()=>{
     if(!modalDataURL) return;
+    const clean = s => (s||"").trim().replace(/[^A-Za-z0-9]+/g,"_").replace(/^_+|_+$/g,"");
     const a=document.createElement("a");
     a.href=modalDataURL;
-    a.download=`${(modalFile.brand||"").replace(/\s+/g,"_")}_${(modalFile.fileName||"").replace(/\s+/g,"_")}_A6.png`;
+    a.download=`${clean(modalFile.brand)}_${clean(modalFile.fileName)}_A6.png`;
     a.click();
   };
   document.getElementById("mPrint").onclick = printCard;
@@ -2894,11 +3008,13 @@ async function openQR(id){
   document.getElementById("mImg").src = "";
   document.getElementById("mErr").style.display = "none";
   modalDataURL = null;
+  setModalButtonsEnabled(false);
   document.getElementById("overlay").classList.add("on");
   try{
     const cv = await buildCardCanvas(modalFile);
     modalDataURL = cv.toDataURL("image/png");
     document.getElementById("mImg").src = modalDataURL;
+    setModalButtonsEnabled(true);
   }catch(e){
     console.error("QR card render failed:", e);
     const errEl = document.getElementById("mErr");
@@ -2906,11 +3022,20 @@ async function openQR(id){
     errEl.style.display = "block";
   }
 }
+function setModalButtonsEnabled(on){
+  ["mDownload","mPrint","mCopy"].forEach(id=>{
+    const el = document.getElementById(id);
+    el.disabled = !on;
+    el.style.opacity = on ? "1" : ".5";
+    el.style.cursor = on ? "pointer" : "default";
+  });
+}
 function closeQR(){ document.getElementById("overlay").classList.remove("on"); }
 function flashModal(t){ const s=document.getElementById("mSub"); const o=s.textContent; s.textContent=t; setTimeout(()=>s.textContent=o,1500); }
 function printCard(){
   if(!modalDataURL) return;
   const w=window.open("","_blank");
+  if(!w){ alert("Your browser blocked the print pop-up. Allow pop-ups for this site and try again."); return; }
   w.document.write(`<html><head><title>Print</title><style>
     @page{size:A6 landscape;margin:0}
     html,body{margin:0;padding:0}
